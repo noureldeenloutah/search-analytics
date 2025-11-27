@@ -1130,7 +1130,7 @@ def load_excel_fast(file_path=None, upload_file=None):
     else:
         return pd.read_excel(file_path, sheet_name=None, engine='openpyxl')
 
-@st.cache_data(show_spinner=False, hash_funcs={pd.DataFrame: lambda x: str(x.shape) + str(x.columns.tolist())})  # 🚀 BETTER HASHING
+@st.cache_data(show_spinner=False, hash_funcs={pd.DataFrame: lambda x: str(x.shape) + str(x.columns.tolist())})
 def prepare_queries_fast(df):
     """Fast query preparation with memory optimization"""
     if df is None or df.empty:
@@ -1142,13 +1142,26 @@ def prepare_queries_fast(df):
     # 🚀 VECTORIZED COLUMN FIXES (faster than individual renames)
     column_mapping = {
         'Search': 'search', 'query': 'search', 'Query': 'search',
-        'Count': 'Counts', 'counts': 'Counts', 'count': 'Counts',  # 🚀 ADD 'count' mapping
-        'Clicks': 'clicks', 'Conversions': 'conversions'
+        'Count': 'Counts', 'counts': 'Counts', 'count': 'Counts',
+        'Clicks': 'clicks', 'Conversions': 'conversions',
+        'Brand': 'brand', 'Category': 'category',
+        'Sub Category': 'sub_category', 'Department': 'department',
+        'Class': 'Class'
     }
     queries = queries.rename(columns=column_mapping)
     
     # 🚀 BATCH ADD MISSING COLUMNS (faster)
-    required_cols = {'search': 'Unknown Query', 'Counts': 0, 'clicks': 0, 'conversions': 0}
+    required_cols = {
+        'search': 'Unknown Query', 
+        'Counts': 0, 
+        'clicks': 0, 
+        'conversions': 0,
+        'brand': 'Unknown',
+        'category': 'Unknown',
+        'sub_category': 'Unknown',
+        'department': 'Unknown',
+        'Class': 'Unknown'
+    }
     for col, default_val in required_cols.items():
         if col not in queries.columns:
             queries[col] = default_val
@@ -1157,13 +1170,42 @@ def prepare_queries_fast(df):
     numeric_cols = ['Counts', 'clicks', 'conversions']
     for col in numeric_cols:
         if col in queries.columns:
-            queries[col] = pd.to_numeric(queries[col], errors='coerce').fillna(0).astype('int32')  # 🚀 USE INT32
+            queries[col] = pd.to_numeric(queries[col], errors='coerce').fillna(0).astype('int32')
+    
+    # ✅ ADD: Create normalized_query column (needed for text filter)
+    if 'search' in queries.columns:
+        queries['normalized_query'] = queries['search'].astype(str)
+    else:
+        queries['normalized_query'] = 'Unknown Query'
+    
+    # ✅ ADD: Create query_length column (needed for histogram)
+    queries['query_length'] = queries['normalized_query'].str.len()
+    
+    # ✅ ADD: Create Date column (needed for time analysis)
+    if 'start_date' in queries.columns:
+        queries['Date'] = pd.to_datetime(queries['start_date'], errors='coerce')
+    else:
+        queries['Date'] = pd.NaT
+    
+    # ✅ ADD: Create CTR and CR columns (needed for analysis)
+    queries['ctr'] = np.where(
+        queries['Counts'] > 0,
+        (queries['clicks'] / queries['Counts']) * 100,
+        0
+    )
+    
+    queries['cr'] = np.where(
+        queries['Counts'] > 0,
+        (queries['conversions'] / queries['Counts']) * 100,
+        0
+    )
     
     # 🚀 OPTIMIZED CLEANUP (faster boolean indexing)
     valid_mask = (queries['search'].notna()) & (queries['search'].astype(str).str.strip() != '')
     queries = queries[valid_mask].reset_index(drop=True)
     
     return queries
+
 
 
 # 🚀 LOAD DATA ONLY ONCE
