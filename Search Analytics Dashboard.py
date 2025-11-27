@@ -1437,26 +1437,18 @@ create_sidebar_memory_monitor()
 
 st.markdown("---")
 
-# ✅ Store original queries for filter reset
+# ✅ Store original queries for filter reset (ONLY ONCE)
 if 'queries_original' not in st.session_state:
     st.session_state.queries_original = queries.copy()
 
-# ----------------- Filters (no sampling) -----------------
-# ----------------- Filters with Apply/Reset buttons -----------------
-# ----------------- OPTIMIZED FILTERS (KEEPING YOUR EXACT LOGIC) -----------------
+# ----------------- OPTIMIZED FILTERS -----------------
 st.sidebar.header("🔎 Filters")
 
 # Initialize session state for filters
 if 'filters_applied' not in st.session_state:
     st.session_state.filters_applied = False
 
-# Store original queries for reset
-# ✅ FIX: Don't store duplicate - use cached version instead
-if 'filter_reset_flag' not in st.session_state:
-    st.session_state.filter_reset_flag = False
-
-
-# 🚀 OPTIMIZED DATE FILTER (SAME LOGIC, BETTER PERFORMANCE)
+# 🚀 OPTIMIZED DATE FILTER
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_date_range(_df):
     """Cache date range calculation"""
@@ -1476,8 +1468,8 @@ def get_date_range(_df):
 default_dates = get_date_range(queries)
 date_range = st.sidebar.date_input("📅 Select Date Range", value=default_dates)
 
-# 🚀 OPTIMIZED Multi-select filters helper (SAME INTERFACE, CACHED)
-@st.cache_data(ttl=1800, show_spinner=False, hash_funcs={pd.DataFrame: lambda x: x.shape[0]})  # 🚀 ADD THIS LINE
+# 🚀 OPTIMIZED Multi-select filters helper
+@st.cache_data(ttl=1800, show_spinner=False, hash_funcs={pd.DataFrame: lambda x: x.shape[0]})
 def get_cached_options(_df, col):
     """Cache filter options for better performance"""
     try:
@@ -1489,7 +1481,7 @@ def get_cached_options(_df, col):
 
 
 def get_filter_options(df, col, label, emoji):
-    """Your exact function with caching optimization"""
+    """Get filter options with caching optimization"""
     if col not in df.columns:
         return [], []
     
@@ -1499,21 +1491,21 @@ def get_filter_options(df, col, label, emoji):
     sel = st.sidebar.multiselect(
         f"{emoji} {label}", 
         options=opts, 
-        default=opts  # Keep your exact default behavior
+        default=opts
     )
     return sel, opts
 
-# Get filter selections (EXACTLY THE SAME AS YOUR CODE)
+# Get filter selections
 brand_filter, brand_opts = get_filter_options(queries, 'brand', 'Brand(s)', '🏷')
 dept_filter, dept_opts = get_filter_options(queries, 'department', 'Department(s)', '🏬')
 cat_filter, cat_opts = get_filter_options(queries, 'category', 'Category(ies)', '📦')
 subcat_filter, subcat_opts = get_filter_options(queries, 'sub_category', 'Sub Category(ies)', '🧴')
 class_filter, class_opts = get_filter_options(queries, 'Class', 'Class(es)', '🎯')
 
-# Text filter (EXACTLY THE SAME)
+# Text filter
 text_filter = st.sidebar.text_input("🔍 Filter queries by text (contains)")
 
-# Filter control buttons (EXACTLY THE SAME)
+# Filter control buttons
 st.sidebar.markdown("---")
 col1, col2 = st.sidebar.columns(2)
 
@@ -1523,38 +1515,35 @@ with col1:
 with col2:
     reset_filters = st.button("🗑️ Reset Filters", use_container_width=True)
 
-# Handle Reset Button (EXACTLY THE SAME AS YOUR CODE)
+# ✅ Handle Reset Button
 if reset_filters:
     queries = st.session_state.queries_original.copy()
     st.session_state.filters_applied = False
     st.rerun()
 
-
-
-# Handle Apply Button (YOUR EXACT LOGIC WITH MINOR OPTIMIZATION)
+# ✅ Handle Apply Button
 elif apply_filters:
     # Start with original data for filtering
     queries = st.session_state.queries_original.copy()
-
     
-    # Date filter (YOUR EXACT LOGIC)
+    # Date filter
     if isinstance(date_range, (list, tuple)) and len(date_range) == 2 and date_range[0] is not None:
         start_date, end_date = date_range
         queries = queries[(queries['Date'] >= pd.to_datetime(start_date)) & (queries['Date'] <= pd.to_datetime(end_date))]
     
-    # Brand filter (YOUR EXACT LOGIC)
+    # Brand filter
     if brand_filter and len(brand_filter) < len(brand_opts):
         queries = queries[queries['brand'].astype(str).isin(brand_filter)]
     
-    # Department filter (YOUR EXACT LOGIC)
+    # Department filter
     if dept_filter and len(dept_filter) < len(dept_opts):
         queries = queries[queries['department'].astype(str).isin(dept_filter)]
     
-    # Category filter (YOUR EXACT LOGIC)
+    # Category filter
     if cat_filter and len(cat_filter) < len(cat_opts):
         queries = queries[queries['category'].astype(str).isin(cat_filter)]
     
-    # Subcategory filter (YOUR EXACT LOGIC)
+    # Subcategory filter
     if subcat_filter and len(subcat_filter) < len(subcat_opts):
         queries = queries[queries['sub_category'].astype(str).isin(subcat_filter)]
 
@@ -1562,15 +1551,15 @@ elif apply_filters:
     if class_filter and len(class_filter) < len(class_opts):
         queries = queries[queries['Class'].astype(str).isin(class_filter)]
 
-    # Text filter (YOUR EXACT LOGIC)
+    # Text filter
     if text_filter:
         queries = queries[queries['normalized_query'].str.contains(re.escape(text_filter), case=False, na=False)]
     
     st.session_state.filters_applied = True
 
-# Show filter status (ENHANCED VERSION OF YOUR CODE)
+# Show filter status
 if st.session_state.filters_applied:
-    original_count = len(st.session_state.queries)  # Use cached version
+    original_count = len(st.session_state.queries_original)  # ✅ Use original count
     current_count = len(queries)
     reduction_pct = ((original_count - current_count) / original_count) * 100 if original_count > 0 else 0
     st.sidebar.success(f"✅ Filters Applied - {current_count:,} rows ({reduction_pct:.1f}% filtered)")
