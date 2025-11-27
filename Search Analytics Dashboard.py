@@ -1437,26 +1437,9 @@ create_sidebar_memory_monitor()
 
 st.markdown("---")
 
-# ----------------- Choose main queries sheet -----------------
-sheet_keys = list(sheets.keys())
-preferred = [k for k in ['queries_clustered','queries_dedup','queries','queries_clustered_preprocessed'] if k in sheets]
-if preferred:
-    main_key = preferred[0]
-else:
-    main_key = sheet_keys[0]
-
-raw_queries = sheets[main_key]
-try:
-    queries = prepare_queries_df(raw_queries)
-except Exception as e:
-    st.error(f"Error processing queries sheet: {e}")
-    st.stop()
-
-# Load additional summary sheets if present
-brand_summary = sheets.get('brand_summary', None)
-category_summary = sheets.get('category_summary', None)
-subcategory_summary = sheets.get('subcategory_summary', None)
-generic_type = sheets.get('generic_type', None)
+# ✅ Store original queries for filter reset
+if 'queries_original' not in st.session_state:
+    st.session_state.queries_original = queries.copy()
 
 # ----------------- Filters (no sampling) -----------------
 # ----------------- Filters with Apply/Reset buttons -----------------
@@ -1542,16 +1525,17 @@ with col2:
 
 # Handle Reset Button (EXACTLY THE SAME AS YOUR CODE)
 if reset_filters:
-    # ✅ FIX: Just reload from cache (no copy needed)
+    queries = st.session_state.queries_original.copy()
     st.session_state.filters_applied = False
-    st.session_state.filter_reset_flag = True
     st.rerun()
+
 
 
 # Handle Apply Button (YOUR EXACT LOGIC WITH MINOR OPTIMIZATION)
 elif apply_filters:
-    # ✅ FIX: Start with cached data (already loaded above)
-    # queries variable is already loaded from st.session_state.queries
+    # Start with original data for filtering
+    queries = st.session_state.queries_original.copy()
+
     
     # Date filter (YOUR EXACT LOGIC)
     if isinstance(date_range, (list, tuple)) and len(date_range) == 2 and date_range[0] is not None:
