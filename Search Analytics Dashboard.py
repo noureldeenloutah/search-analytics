@@ -1455,6 +1455,7 @@ brand_summary = sheets.get('brand_summary', None)
 category_summary = sheets.get('category_summary', None)
 subcategory_summary = sheets.get('subcategory_summary', None)
 generic_type = sheets.get('generic_type', None)
+
 # ----------------- PERSISTENT FILTERS (FIXED) -----------------
 st.sidebar.header("🔎 Filters")
 
@@ -1493,9 +1494,6 @@ if 'queries_original' not in st.session_state:
     
     st.session_state.queries_original = queries.copy()
 
-# ✅ FIX: Initialize queries in session state if not exists
-if 'queries' not in st.session_state:
-    st.session_state.queries = st.session_state.queries_original.copy()
 
 # ✅ STEP 2: Get current filter options (from ORIGINAL data)
 @st.cache_data(ttl=1800, show_spinner=False, hash_funcs={pd.DataFrame: lambda x: x.shape[0]})
@@ -1520,8 +1518,6 @@ class_opts = get_cached_options(st.session_state.queries_original, 'Class')
 def get_date_range(_df):
     """Cache date range calculation"""
     try:
-        if 'Date' not in _df.columns:
-            return []
         min_date = _df['Date'].min()
         max_date = _df['Date'].max()
         
@@ -1663,7 +1659,7 @@ if st.session_state.get('filters_applied', False):
 # ✅ STEP 7: Always use session state queries
 queries = st.session_state.queries
 
-# ✅ FIX: Ensure Date column exists and is datetime (safety check for edge cases)
+# ✅ FIX: Ensure Date column exists and is datetime
 if 'Date' not in queries.columns:
     # Try to find date column with common names
     date_candidates = ['start_date', 'date', 'query_date', 'end_date']
@@ -5037,40 +5033,7 @@ with tab_search:
             kw_perf_df = calculate_enhanced_keyword_performance(queries)
 
             # ✅ GENERIC: Get top 4 grouped keywords by total volume
-            # ✅ QUICK FIX: Handle missing count columns
-            try:
-                if kw_perf_df.empty:
-                    top_4_keywords = pd.DataFrame()
-                else:
-                    # Try to find any count-like column
-                    count_candidates = ['total_counts', 'count', 'Counts', 'volume', 'search_volume']
-                    
-                    count_col = None
-                    for col in count_candidates:
-                        if col in kw_perf_df.columns:
-                            count_col = col
-                            break
-                    
-                    if count_col is None:
-                        # Use first numeric column
-                        numeric_cols = kw_perf_df.select_dtypes(include=['int64', 'float64']).columns.tolist()
-                        if numeric_cols:
-                            count_col = numeric_cols[0]
-                        else:
-                            # No numeric columns, just take first 4 rows
-                            top_4_keywords = kw_perf_df.head(4)
-                            count_col = None
-                    
-                    if count_col:
-                        top_4_keywords = kw_perf_df.nlargest(4, count_col)
-                    else:
-                        top_4_keywords = kw_perf_df.head(4)
-                        
-            except Exception as e:
-                st.error(f"Error getting top keywords: {str(e)}")
-                st.info(f"Available columns: {list(kw_perf_df.columns)}")
-                top_4_keywords = pd.DataFrame()
-
+            top_4_keywords = kw_perf_df.nlargest(4, 'total_counts')
             
             # Enhanced metrics display with better styling
             st.markdown("""
@@ -5081,24 +5044,7 @@ with tab_search:
             
             # ✅ DYNAMIC: Create columns based on number of top keywords (max 4)
             num_keywords = min(len(top_4_keywords), 4)
-
-            # ✅ FIX: Handle case when no keywords exist
-            if num_keywords == 0:
-                st.warning("⚠️ No keyword data available to display top performers.")
-                st.info("This could be due to:")
-                st.markdown("""
-                - Empty dataset after filtering
-                - No valid keyword performance data
-                - Data processing issues
-                
-                **Try:**
-                - Reset your filters
-                - Check your data source
-                - Reload the page
-                """)
-            else:
-                cols = st.columns(num_keywords)
-
+            cols = st.columns(num_keywords)
             
             # ✅ EMOJI MAPPING (you can customize this)
             emoji_map = {
