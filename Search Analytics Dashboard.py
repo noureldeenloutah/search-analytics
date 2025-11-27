@@ -1638,7 +1638,47 @@ if st.session_state.get('filters_applied', False):
 # ✅ STEP 7: Always use session state queries
 queries = st.session_state.queries
 
-# Show filter status
+# ✅ FIX: Check if filtered data is empty
+if queries.empty:
+    st.sidebar.error("⚠️ **No data matches your filters!**")
+    st.sidebar.warning("Try adjusting your filter criteria:")
+    
+    # Show which filters are active
+    settings = st.session_state.filter_settings
+    active_filters = []
+    
+    if settings.get('brand_filter') and len(settings['brand_filter']) < len(brand_opts):
+        active_filters.append(f"🏷️ Brands: {len(settings['brand_filter'])} selected")
+    if settings.get('dept_filter') and len(settings['dept_filter']) < len(dept_opts):
+        active_filters.append(f"🏬 Departments: {len(settings['dept_filter'])} selected")
+    if settings.get('cat_filter') and len(settings['cat_filter']) < len(cat_opts):
+        active_filters.append(f"📦 Categories: {len(settings['cat_filter'])} selected")
+    if settings.get('subcat_filter') and len(settings['subcat_filter']) < len(subcat_opts):
+        active_filters.append(f"🧴 Subcategories: {len(settings['subcat_filter'])} selected")
+    if settings.get('class_filter') and len(settings['class_filter']) < len(class_opts):
+        active_filters.append(f"🎯 Classes: {len(settings['class_filter'])} selected")
+    if settings.get('text_filter'):
+        active_filters.append(f"🔍 Text: '{settings['text_filter']}'")
+    
+    if active_filters:
+        st.sidebar.markdown("**Active filters:**")
+        for f in active_filters:
+            st.sidebar.markdown(f"- {f}")
+    
+    # Show empty state message in main area
+    st.error("### ⚠️ No Data Available")
+    st.warning("""
+    **Your current filter combination returned 0 results.**
+    
+    **Suggestions:**
+    1. Click "🗑️ Reset Filters" to start over
+    2. Remove some filters to broaden your search
+    3. Check if filter combinations are too restrictive
+    """)
+    
+    st.stop()  # Stop execution to prevent errors
+
+# Show filter status (only if data exists)
 if st.session_state.get('filters_applied', False):
     original_count = len(st.session_state.queries_original)
     current_count = len(queries)
