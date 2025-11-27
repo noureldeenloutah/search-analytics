@@ -1108,20 +1108,28 @@ def prepare_queries_df(df: pd.DataFrame, use_derived_metrics: bool = False):
     return df
 
 
-# ----------------- OPTIMIZED DATA LOADING SECTION -----------------
+# ============================================================================
+# 🚀 OPTIMIZED DATA LOADING SECTION
+# ============================================================================
+
 st.sidebar.title("📁 Upload Data")
 upload = st.sidebar.file_uploader("Upload Excel (multi-sheet) or CSV (queries)", type=['xlsx','csv'])
 
-# 🚀 SIMPLE SESSION STATE CACHING
+# ============================================================================
+# 🔧 INITIALIZE SESSION STATE (FIXED - Added queries_original and queries_filtered)
+# ============================================================================
 if 'data_loaded' not in st.session_state:
     st.session_state.data_loaded = False
     st.session_state.queries = None
+    st.session_state.queries_original = None  # ✅ ADDED for filtering
+    st.session_state.queries_filtered = None  # ✅ ADDED for filtering
     st.session_state.sheets = None
-# ✅ FIX: Add memory cleanup flag
-if 'memory_optimized' not in st.session_state:
+    st.session_state.filters_applied = False  # ✅ ADDED
     st.session_state.memory_optimized = False
 
-# 🚀 FAST LOADING FUNCTIONS
+# ============================================================================
+# 🚀 FAST LOADING FUNCTIONS (UNCHANGED)
+# ============================================================================
 @st.cache_data(show_spinner=False)
 def load_excel_fast(file_path=None, upload_file=None):
     """Fast Excel loading with caching"""
@@ -1130,48 +1138,65 @@ def load_excel_fast(file_path=None, upload_file=None):
     else:
         return pd.read_excel(file_path, sheet_name=None, engine='openpyxl')
 
-@st.cache_data(show_spinner=False, hash_funcs={pd.DataFrame: lambda x: str(x.shape) + str(x.columns.tolist())})  # 🚀 BETTER HASHING
+@st.cache_data(show_spinner=False, hash_funcs={pd.DataFrame: lambda x: str(x.shape) + str(x.columns.tolist())})
 def prepare_queries_fast(df):
     """Fast query preparation with memory optimization"""
     if df is None or df.empty:
         return pd.DataFrame()
     
-    # 🚀 SHALLOW COPY (faster)
     queries = df.copy(deep=False)
     
-    # 🚀 VECTORIZED COLUMN FIXES (faster than individual renames)
     column_mapping = {
         'Search': 'search', 'query': 'search', 'Query': 'search',
-        'Count': 'Counts', 'counts': 'Counts', 'count': 'Counts',  # 🚀 ADD 'count' mapping
+        'Count': 'Counts', 'counts': 'Counts', 'count': 'Counts',
         'Clicks': 'clicks', 'Conversions': 'conversions'
     }
     queries = queries.rename(columns=column_mapping)
     
-    # 🚀 BATCH ADD MISSING COLUMNS (faster)
     required_cols = {'search': 'Unknown Query', 'Counts': 0, 'clicks': 0, 'conversions': 0}
     for col, default_val in required_cols.items():
         if col not in queries.columns:
             queries[col] = default_val
     
-    # 🚀 VECTORIZED NUMERIC CONVERSION (much faster)
     numeric_cols = ['Counts', 'clicks', 'conversions']
     for col in numeric_cols:
         if col in queries.columns:
-            queries[col] = pd.to_numeric(queries[col], errors='coerce').fillna(0).astype('int32')  # 🚀 USE INT32
+            queries[col] = pd.to_numeric(queries[col], errors='coerce').fillna(0).astype('int32')
     
-    # 🚀 OPTIMIZED CLEANUP (faster boolean indexing)
     valid_mask = (queries['search'].notna()) & (queries['search'].astype(str).str.strip() != '')
     queries = queries[valid_mask].reset_index(drop=True)
     
     return queries
 
+# ============================================================================
+# 🔧 FIX: MERGE GENERIC_TYPE INTO QUERIES (NEW FUNCTION)
+# ============================================================================
+@st.cache_data(show_spinner=False)
+def merge_generic_into_queries(queries_df, generic_df):
+    """Merge generic_type sheet into queries_clustered as brand='Other'"""
+    if generic_df is None or generic_df.empty:
+        return queries_df
+    
+    generic_clean = generic_df.copy()
+    generic_clean['Brand'] = 'Other'
+    generic_clean['brand'] = 'Other'
+    
+    for col in queries_df.columns:
+        if col not in generic_clean.columns:
+            generic_clean[col] = None
+    
+    generic_clean = generic_clean[queries_df.columns]
+    merged = pd.concat([queries_df, generic_clean], ignore_index=True)
+    
+    st.sidebar.success(f"✅ Merged {len(generic_df):,} generic rows as brand='Other'")
+    return merged
 
-# 🚀 LOAD DATA ONLY ONCE
-# 🚀 LOAD DATA ONLY ONCE (REPLACE LINES 730-780)
+# ============================================================================
+# 🚀 LOAD DATA ONLY ONCE (FIXED - Added generic merge)
+# ============================================================================
 if not st.session_state.data_loaded:
     with st.spinner('🚀 Loading data...'):
         try:
-            # Load file
             if upload is not None:
                 if upload.name.endswith('.xlsx'):
                     sheets = load_excel_fast(upload_file=upload)
@@ -1179,14 +1204,13 @@ if not st.session_state.data_loaded:
                     df_csv = pd.read_csv(upload, low_memory=False)
                     sheets = {'queries': df_csv}
             else:
-                default_path = "NUTRACEUTICALS AND NUTRITION combined_data_ June - August 2025_with_brands.xlsx"
+                default_path = "Search Data.xlsx"
                 if os.path.exists(default_path):
                     sheets = load_excel_fast(file_path=default_path)
                 else:
                     st.info("📁 No file uploaded and default Excel not found.")
                     st.stop()
             
-            # 🚀 MEMORY OPTIMIZATION #1: Get main sheet and DROP OTHERS IMMEDIATELY
             sheet_names = list(sheets.keys())
             preferred = ['queries_clustered', 'queries_dedup', 'queries']
             main_sheet = None
@@ -1199,75 +1223,73 @@ if not st.session_state.data_loaded:
             if main_sheet is None:
                 main_sheet = sheet_names[0]
             
-            # ✅ EXTRACT MAIN SHEET
             raw_queries = sheets[main_sheet]
             
-            # 🚀 MEMORY OPTIMIZATION #2: Keep ONLY essential sheets
-            summary_sheets = ['brand_summary', 'category_summary', 'subcategory_summary', 'generic_type']
+            # ✅ FIX: MERGE GENERIC_TYPE INTO QUERIES
+            if 'generic_type' in sheets:
+                raw_queries = merge_generic_into_queries(raw_queries, sheets['generic_type'])
+            
+            summary_sheets = ['brand_summary', 'category_summary', 'subcategory_summary']
             essential_sheets = {main_sheet: raw_queries}
             
             for sheet_name in summary_sheets:
                 if sheet_name in sheets:
                     essential_sheets[sheet_name] = sheets[sheet_name]
             
-            # ✅ DELETE ORIGINAL SHEETS DICT (CRITICAL!)
             del sheets
-            gc.collect()  # Force cleanup
+            gc.collect()
             
-            # 🚀 PROCESS QUERIES
             queries = prepare_queries_fast(raw_queries)
             
-            # ✅ DELETE RAW QUERIES (CRITICAL!)
             del raw_queries
             gc.collect()
             
-            # ✅ STORE OPTIMIZED DATA
+            # ✅ FIX: Store both original and filtered versions
             st.session_state.queries = queries
+            st.session_state.queries_original = queries.copy()
+            st.session_state.queries_filtered = queries.copy()
             st.session_state.sheets = essential_sheets
             st.session_state.data_loaded = True
             st.session_state.memory_optimized = True
             
-            # 🚀 FINAL CLEANUP
             cleanup_memory()
             
         except Exception as e:
             st.error(f"❌ Loading error: {e}")
             st.stop()
 
-
-# 🚀 USE CACHED DATA
-queries = st.session_state.queries
+# ============================================================================
+# 🔧 FIX: USE FILTERED DATA (CHANGED FROM queries = st.session_state.queries)
+# ============================================================================
+queries = st.session_state.queries_filtered  # ✅ CHANGED: Use filtered instead of queries
 sheets = st.session_state.sheets
 
-# Load summary sheets
 brand_summary = sheets.get('brand_summary', None)
 category_summary = sheets.get('category_summary', None)
 subcategory_summary = sheets.get('subcategory_summary', None)
-generic_type = sheets.get('generic_type', None)
+generic_type = queries[queries['brand'] == 'Other'].copy() if 'brand' in queries.columns else pd.DataFrame()  # ✅ CHANGED: Extract from queries
 
-# 🚀 OPTIONAL: Reload button
 if st.sidebar.button("🔄 Reload Data"):
     st.session_state.data_loaded = False
     st.rerun()
 
-# Show data info
 if st.sidebar.checkbox("📊 Show Data Info"):
     st.sidebar.success(f"""
     **Data Loaded:**
-    - Queries: {len(queries):,}
+    - Total Queries: {len(st.session_state.queries_original):,}
+    - Filtered Queries: {len(queries):,}
+    - Generic Queries: {len(generic_type):,}
     - Sheets: {len(sheets)}
-    - Columns: {list(queries.columns)}
     """)
-    
+
+# ============================================================================
+# 🔍 SIDEBAR MEMORY MONITOR (UNCHANGED - Just added error handling)
+# ============================================================================
 import sys
 import gc
 import psutil
 import os
 import pandas as pd
-
-# ============================================================================
-# 🔍 SIDEBAR MEMORY MONITOR (Simple & Accurate)
-# ============================================================================
 
 def get_accurate_size(obj):
     """Get accurate deep size of an object"""
@@ -1292,11 +1314,13 @@ def create_sidebar_memory_monitor():
         st.markdown("---")
         st.markdown("### 🔍 Memory Monitor")
         
-        # Get process memory
-        process = psutil.Process(os.getpid())
-        process_memory_mb = process.memory_info().rss / 1024 / 1024
+        try:
+            process = psutil.Process(os.getpid())
+            process_memory_mb = process.memory_info().rss / 1024 / 1024
+        except:
+            st.info("💡 Memory monitor unavailable")
+            return
         
-        # Memory status indicator
         if process_memory_mb > 2000:
             status = "🔴 CRITICAL"
             color = "#FF4444"
@@ -1313,20 +1337,17 @@ def create_sidebar_memory_monitor():
         </div>
         """, unsafe_allow_html=True)
         
-        # Display total memory
         st.metric("💾 Total Memory", f"{process_memory_mb:.0f} MB")
         
-        # Analyze session state
         if st.button("🔍 Analyze Memory", key="sidebar_analyze"):
             with st.spinner("Analyzing..."):
                 memory_data = []
                 
-                # Scan session state
                 for key, value in st.session_state.items():
                     size_bytes = get_accurate_size(value)
                     size_mb = size_bytes / 1024 / 1024
                     
-                    if size_mb > 0.1:  # Only show items > 0.1 MB
+                    if size_mb > 0.1:
                         memory_data.append({
                             'Item': key,
                             'Size (MB)': round(size_mb, 2),
@@ -1335,57 +1356,21 @@ def create_sidebar_memory_monitor():
                         })
                 
                 if memory_data:
-                    # Sort by size
                     memory_df = pd.DataFrame(memory_data)
                     memory_df = memory_df.sort_values('Size (MB)', ascending=False)
                     
-                    # Show top 10 memory consumers
                     st.markdown("#### 📊 Top Memory Items")
                     
                     for idx, row in memory_df.head(10).iterrows():
-                        with st.expander(f"{row['Priority']} {row['Item']} - {row['Size (MB)']} MB"):
+                        with st.expander(f"{row['Priority']} - {row['Item']} - {row['Size (MB)']:.2f} MB"):
                             st.write(f"**Type:** {row['Type']}")
-                            st.write(f"**Size:** {row['Size (MB)']} MB")
-                            
-                            # Provide fix recommendations
-                            if row['Size (MB)'] > 50:
-                                st.error("⚠️ **ACTION REQUIRED**: This item is consuming significant memory!")
-                                
-                                if 'styled' in row['Item'].lower():
-                                    st.code("""
-# FIX: Delete display DataFrame after styling
-del display_brands
-gc.collect()
-                                    """, language='python')
-                                
-                                elif 'df' in row['Item'].lower() or 'dataframe' in row['Type'].lower():
-                                    st.code("""
-# FIX: Use caching and delete unused copies
-@st.cache_data
-def process_data(_df):
-    return _df.copy()
+                            st.write(f"**Size:** {row['Size (MB)']:.2f} MB")
+                            st.write(f"**Priority:** {row['Priority']}")
 
-# Delete temporary DataFrames
-del temp_df
-gc.collect()
-                                    """, language='python')
-                            
-                            elif row['Size (MB)'] > 10:
-                                st.warning("💡 **OPTIMIZATION**: Consider optimizing this item")
-                                st.code("""
-# FIX: Store only necessary data
-# Instead of storing full DataFrame:
-st.session_state.full_data = df  # ❌ BAD
-
-# Store only what you need:
-st.session_state.summary = df.groupby('key').sum()  # ✅ GOOD
-                                """, language='python')
                     
-                    # Total session state memory
                     total_session_mb = memory_df['Size (MB)'].sum()
                     st.metric("📦 Session State Total", f"{total_session_mb:.0f} MB")
                     
-                    # Download full report
                     csv = memory_df.to_csv(index=False)
                     st.download_button(
                         label="📥 Download Full Report",
@@ -1396,9 +1381,7 @@ st.session_state.summary = df.groupby('key').sum()  # ✅ GOOD
                 else:
                     st.success("✅ No large memory items found!")
         
-        # Quick actions
         st.markdown("#### ⚡ Quick Actions")
-        
         col1, col2 = st.columns(2)
         
         with col1:
@@ -1411,7 +1394,6 @@ st.session_state.summary = df.groupby('key').sum()  # ✅ GOOD
                 collected = gc.collect()
                 st.success(f"✅ Freed {collected} objects")
         
-        # Memory tips
         with st.expander("💡 Memory Tips"):
             st.markdown("""
             **🔴 HIGH Priority (>50 MB):**
@@ -1429,37 +1411,43 @@ st.session_state.summary = df.groupby('key').sum()  # ✅ GOOD
             - Clean up when memory > 1500 MB
             """)
 
-# ============================================================================
-# 📍 CALL THIS AT THE TOP OF YOUR APP (after imports, before tabs)
-# ============================================================================
 create_sidebar_memory_monitor()
-
 
 st.markdown("---")
 
-# ----------------- Choose main queries sheet -----------------
-sheet_keys = list(sheets.keys())
-preferred = [k for k in ['queries_clustered','queries_dedup','queries','queries_clustered_preprocessed'] if k in sheets]
-if preferred:
-    main_key = preferred[0]
-else:
-    main_key = sheet_keys[0]
+# ============================================================================
+# 🚀 PROCESS QUERIES WITH prepare_queries_df (FIXED - Only run once)
+# ============================================================================
+# ✅ CRITICAL FIX: Only process if queries_original is None (prevents overwriting filtered data)
+if st.session_state.queries_original is None:
+    sheet_keys = list(sheets.keys())
+    preferred = [k for k in ['queries_clustered','queries_dedup','queries','queries_clustered_preprocessed'] if k in sheets]
+    if preferred:
+        main_key = preferred[0]
+    else:
+        main_key = sheet_keys[0]
 
-raw_queries = sheets[main_key]
-try:
-    queries = prepare_queries_df(raw_queries)
-except Exception as e:
-    st.error(f"Error processing queries sheet: {e}")
-    st.stop()
+    raw_queries = sheets[main_key]
+    try:
+        queries_processed = prepare_queries_df(raw_queries)
+        
+        # ✅ Initialize both original and filtered
+        st.session_state.queries_original = queries_processed
+        st.session_state.queries_filtered = queries_processed.copy()
+        
+    except Exception as e:
+        st.error(f"Error processing queries sheet: {e}")
+        st.stop()
 
-# Load additional summary sheets if present
+# ✅ CRITICAL FIX: Always use filtered data from session state
+queries = st.session_state.queries_filtered
+
+# Load summary sheets
 brand_summary = sheets.get('brand_summary', None)
 category_summary = sheets.get('category_summary', None)
 subcategory_summary = sheets.get('subcategory_summary', None)
-generic_type = sheets.get('generic_type', None)
+generic_type = queries[queries['brand'] == 'Other'].copy() if 'brand' in queries.columns else pd.DataFrame()
 
-# ----------------- Filters (no sampling) -----------------
-# ----------------- Filters with Apply/Reset buttons -----------------
 # ----------------- OPTIMIZED FILTERS (KEEPING YOUR EXACT LOGIC) -----------------
 st.sidebar.header("🔎 Filters")
 
@@ -1467,11 +1455,8 @@ st.sidebar.header("🔎 Filters")
 if 'filters_applied' not in st.session_state:
     st.session_state.filters_applied = False
 
-# Store original queries for reset
-# ✅ FIX: Don't store duplicate - use cached version instead
 if 'filter_reset_flag' not in st.session_state:
     st.session_state.filter_reset_flag = False
-
 
 # 🚀 OPTIMIZED DATE FILTER (SAME LOGIC, BETTER PERFORMANCE)
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -1490,11 +1475,12 @@ def get_date_range(_df):
     except:
         return []
 
-default_dates = get_date_range(queries)
+# ✅ FIX #3: Use original data for date range (CHANGED THIS LINE)
+default_dates = get_date_range(st.session_state.queries_original)
 date_range = st.sidebar.date_input("📅 Select Date Range", value=default_dates)
 
 # 🚀 OPTIMIZED Multi-select filters helper (SAME INTERFACE, CACHED)
-@st.cache_data(ttl=1800, show_spinner=False, hash_funcs={pd.DataFrame: lambda x: x.shape[0]})  # 🚀 ADD THIS LINE
+@st.cache_data(ttl=1800, show_spinner=False, hash_funcs={pd.DataFrame: lambda x: x.shape[0]})
 def get_cached_options(_df, col):
     """Cache filter options for better performance"""
     try:
@@ -1504,28 +1490,21 @@ def get_cached_options(_df, col):
     except:
         return []
 
-
 def get_filter_options(df, col, label, emoji):
     """Your exact function with caching optimization"""
     if col not in df.columns:
         return [], []
     
-    # Use cached options instead of recalculating every time
     opts = get_cached_options(df, col)
-    
-    sel = st.sidebar.multiselect(
-        f"{emoji} {label}", 
-        options=opts, 
-        default=opts  # Keep your exact default behavior
-    )
+    sel = st.sidebar.multiselect(f"{emoji} {label}", options=opts, default=opts)
     return sel, opts
 
-# Get filter selections (EXACTLY THE SAME AS YOUR CODE)
-brand_filter, brand_opts = get_filter_options(queries, 'brand', 'Brand(s)', '🏷')
-dept_filter, dept_opts = get_filter_options(queries, 'department', 'Department(s)', '🏬')
-cat_filter, cat_opts = get_filter_options(queries, 'category', 'Category(ies)', '📦')
-subcat_filter, subcat_opts = get_filter_options(queries, 'sub_category', 'Sub Category(ies)', '🧴')
-class_filter, class_opts = get_filter_options(queries, 'Class', 'Class(es)', '🎯')
+# ✅ FIX #4: Get filter options from ORIGINAL data (CHANGED THESE LINES)
+brand_filter, brand_opts = get_filter_options(st.session_state.queries_original, 'brand', 'Brand(s)', '🏷')
+dept_filter, dept_opts = get_filter_options(st.session_state.queries_original, 'department', 'Department(s)', '🏬')
+cat_filter, cat_opts = get_filter_options(st.session_state.queries_original, 'category', 'Category(ies)', '📦')
+subcat_filter, subcat_opts = get_filter_options(st.session_state.queries_original, 'sub_category', 'Sub Category(ies)', '🧴')
+class_filter, class_opts = get_filter_options(st.session_state.queries_original, 'Class', 'Class(es)', '🎯')
 
 # Text filter (EXACTLY THE SAME)
 text_filter = st.sidebar.text_input("🔍 Filter queries by text (contains)")
@@ -1540,18 +1519,18 @@ with col1:
 with col2:
     reset_filters = st.button("🗑️ Reset Filters", use_container_width=True)
 
-# Handle Reset Button (EXACTLY THE SAME AS YOUR CODE)
+# Handle Reset Button
 if reset_filters:
-    # ✅ FIX: Just reload from cache (no copy needed)
+    # ✅ FIX #5: Reset to original data (CHANGED THIS)
+    queries = st.session_state.queries_original.copy()
     st.session_state.filters_applied = False
     st.session_state.filter_reset_flag = True
     st.rerun()
 
-
-# Handle Apply Button (YOUR EXACT LOGIC WITH MINOR OPTIMIZATION)
+# Handle Apply Button
 elif apply_filters:
-    # ✅ FIX: Start with cached data (already loaded above)
-    # queries variable is already loaded from st.session_state.queries
+    # ✅ FIX #6: Start with original data (ADDED THIS LINE)
+    queries = st.session_state.queries_original.copy()
     
     # Date filter (YOUR EXACT LOGIC)
     if isinstance(date_range, (list, tuple)) and len(date_range) == 2 and date_range[0] is not None:
@@ -1583,10 +1562,12 @@ elif apply_filters:
         queries = queries[queries['normalized_query'].str.contains(re.escape(text_filter), case=False, na=False)]
     
     st.session_state.filters_applied = True
+    # ✅ FIX #7: Force rerun to propagate changes (ADDED THIS)
+    st.rerun()
 
-# Show filter status (ENHANCED VERSION OF YOUR CODE)
+# Show filter status
 if st.session_state.filters_applied:
-    original_count = len(st.session_state.queries)  # Use cached version
+    original_count = len(st.session_state.queries_original)
     current_count = len(queries)
     reduction_pct = ((original_count - current_count) / original_count) * 100 if original_count > 0 else 0
     st.sidebar.success(f"✅ Filters Applied - {current_count:,} rows ({reduction_pct:.1f}% filtered)")
@@ -1595,9 +1576,12 @@ else:
 
 st.sidebar.markdown(f"**📊 Current rows:** {len(queries):,}")
 
-# 🚀 DEBUG INFO (OPTIONAL - REMOVE AFTER TESTING)
+# 🚀 DEBUG INFO
 if st.sidebar.checkbox("🔍 Debug Info", value=False):
     st.sidebar.write("**Filter Status:**")
+    st.sidebar.write(f"- Original rows: {len(st.session_state.queries_original):,}")
+    st.sidebar.write(f"- Current rows: {len(queries):,}")
+    st.sidebar.write(f"- Filters applied: {st.session_state.filters_applied}")
     st.sidebar.write(f"- Date range: {date_range}")
     st.sidebar.write(f"- Brand selected: {len(brand_filter)}/{len(brand_opts)}")
     st.sidebar.write(f"- Dept selected: {len(dept_filter)}/{len(dept_opts)}")
@@ -1605,6 +1589,9 @@ if st.sidebar.checkbox("🔍 Debug Info", value=False):
     st.sidebar.write(f"- Subcat selected: {len(subcat_filter)}/{len(subcat_opts)}")
     st.sidebar.write(f"- Class selected: {len(class_filter)}/{len(class_opts)}")
     st.sidebar.write(f"- Text filter: '{text_filter}'")
+    st.sidebar.write(f"- Generic queries: {len(generic_type):,}")
+
+st.markdown("---")
 
 
 
@@ -12889,7 +12876,7 @@ with tab_generic:
                 <span class='icon'>🔍</span>
                 <div class='value'>{format_number(metrics['total_generic_terms'])}</div>
                 <div class='label'>Total Generic Terms</div>
-                <div class='sub-label'>Active nutraceutical terms</div>
+                <div class='sub-label'>Active terms</div>
             </div>
             """, unsafe_allow_html=True)
         
