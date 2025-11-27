@@ -1167,7 +1167,6 @@ def prepare_queries_fast(df):
 
 
 # 🚀 LOAD DATA ONLY ONCE
-# 🚀 LOAD DATA ONLY ONCE (REPLACE LINES 730-780)
 if not st.session_state.data_loaded:
     with st.spinner('🚀 Loading data...'):
         try:
@@ -1258,7 +1257,11 @@ if st.sidebar.checkbox("📊 Show Data Info"):
     - Sheets: {len(sheets)}
     - Columns: {list(queries.columns)}
     """)
-    
+
+# ✅ FIX #1: Store original queries for filter reset (ADDED)
+if 'queries_original' not in st.session_state:
+    st.session_state.queries_original = queries.copy()
+
 import sys
 import gc
 import psutil
@@ -1437,29 +1440,12 @@ create_sidebar_memory_monitor()
 
 st.markdown("---")
 
-# ----------------- Choose main queries sheet -----------------
-sheet_keys = list(sheets.keys())
-preferred = [k for k in ['queries_clustered','queries_dedup','queries','queries_clustered_preprocessed'] if k in sheets]
-if preferred:
-    main_key = preferred[0]
-else:
-    main_key = sheet_keys[0]
+# ✅ FIX #2: DELETED DUPLICATE SECTION (Lines that were here are now removed)
+# The "Choose main queries sheet" section has been removed because:
+# 1. It was duplicating data loading logic
+# 2. It was overwriting filtered queries
+# 3. Summary sheets are already loaded above
 
-raw_queries = sheets[main_key]
-try:
-    queries = prepare_queries_df(raw_queries)
-except Exception as e:
-    st.error(f"Error processing queries sheet: {e}")
-    st.stop()
-
-# Load additional summary sheets if present
-brand_summary = sheets.get('brand_summary', None)
-category_summary = sheets.get('category_summary', None)
-subcategory_summary = sheets.get('subcategory_summary', None)
-generic_type = sheets.get('generic_type', None)
-
-# ----------------- Filters (no sampling) -----------------
-# ----------------- Filters with Apply/Reset buttons -----------------
 # ----------------- OPTIMIZED FILTERS (KEEPING YOUR EXACT LOGIC) -----------------
 st.sidebar.header("🔎 Filters")
 
@@ -1494,7 +1480,7 @@ default_dates = get_date_range(queries)
 date_range = st.sidebar.date_input("📅 Select Date Range", value=default_dates)
 
 # 🚀 OPTIMIZED Multi-select filters helper (SAME INTERFACE, CACHED)
-@st.cache_data(ttl=1800, show_spinner=False, hash_funcs={pd.DataFrame: lambda x: x.shape[0]})  # 🚀 ADD THIS LINE
+@st.cache_data(ttl=1800, show_spinner=False, hash_funcs={pd.DataFrame: lambda x: x.shape[0]})
 def get_cached_options(_df, col):
     """Cache filter options for better performance"""
     try:
@@ -1540,18 +1526,18 @@ with col1:
 with col2:
     reset_filters = st.button("🗑️ Reset Filters", use_container_width=True)
 
-# Handle Reset Button (EXACTLY THE SAME AS YOUR CODE)
+# ✅ FIX #3: Handle Reset Button (FIXED)
 if reset_filters:
-    # ✅ FIX: Just reload from cache (no copy needed)
+    # ✅ Reload from original cached data
+    queries = st.session_state.queries_original.copy()
     st.session_state.filters_applied = False
-    st.session_state.filter_reset_flag = True
     st.rerun()
 
 
 # Handle Apply Button (YOUR EXACT LOGIC WITH MINOR OPTIMIZATION)
 elif apply_filters:
-    # ✅ FIX: Start with cached data (already loaded above)
-    # queries variable is already loaded from st.session_state.queries
+    # ✅ FIX: Start with original data for filtering
+    queries = st.session_state.queries_original.copy()
     
     # Date filter (YOUR EXACT LOGIC)
     if isinstance(date_range, (list, tuple)) and len(date_range) == 2 and date_range[0] is not None:
@@ -1586,7 +1572,7 @@ elif apply_filters:
 
 # Show filter status (ENHANCED VERSION OF YOUR CODE)
 if st.session_state.filters_applied:
-    original_count = len(st.session_state.queries)  # Use cached version
+    original_count = len(st.session_state.queries_original)  # ✅ Use original
     current_count = len(queries)
     reduction_pct = ((original_count - current_count) / original_count) * 100 if original_count > 0 else 0
     st.sidebar.success(f"✅ Filters Applied - {current_count:,} rows ({reduction_pct:.1f}% filtered)")
