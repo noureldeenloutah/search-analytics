@@ -1705,18 +1705,20 @@ tab_overview, tab_search, tab_time, tab_department, tab_category, tab_subcat, ta
     "💡 Insights"
 ])
 
+# ✅ FIX: Add Date column if missing (for processed queries)
+if 'Date' not in queries.columns:
+    # Try to create from various possible date columns
+    if 'start_date' in queries.columns:
+        queries['Date'] = pd.to_datetime(queries['start_date'], errors='coerce')
+    else:
+        # Create placeholder date column
+        queries['Date'] = pd.NaT
+        st.warning("⚠️ No date column found - time analysis will be limited")
+
 # ----------------- Overview -----------------
 with tab_overview:
     st.header("🌿 Overview & Insights")
     st.markdown("Discover performance patterns.  Based on **data** (e.g., millions of conscious searches across categories).")
-
-    # Accuracy Fix: Ensure Date conversion (Excel serial)
-    if not queries['Date'].dtype == 'datetime64[ns]':
-        queries['Date'] = pd.to_datetime(queries['start_date'], unit='D', origin='1899-12-30', errors='coerce')
-
-    # Refresh Button (User-Friendly)
-    if st.button("🔄 Refresh Data & Filters"):
-        st.rerun()
 
     # 🎨Professional Blue-THEMED HERO HEADER
     st.sidebar.header("🎨 Customize Dashboard Theme")
