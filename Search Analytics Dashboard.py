@@ -1130,7 +1130,7 @@ def load_excel_fast(file_path=None, upload_file=None):
     else:
         return pd.read_excel(file_path, sheet_name=None, engine='openpyxl')
 
-@st.cache_data(show_spinner=False, hash_funcs={pd.DataFrame: lambda x: str(x.shape) + str(x.columns.tolist())})  # 🚀 BETTER HASHING
+@st.cache_data(show_spinner=False, hash_funcs={pd.DataFrame: lambda x: str(x.shape) + str(x.columns.tolist())})
 def prepare_queries_fast(df):
     """Fast query preparation with memory optimization"""
     if df is None or df.empty:
@@ -1142,7 +1142,7 @@ def prepare_queries_fast(df):
     # 🚀 VECTORIZED COLUMN FIXES (faster than individual renames)
     column_mapping = {
         'Search': 'search', 'query': 'search', 'Query': 'search',
-        'Count': 'Counts', 'counts': 'Counts', 'count': 'Counts',  # 🚀 ADD 'count' mapping
+        'Count': 'Counts', 'counts': 'Counts', 'count': 'Counts',
         'Clicks': 'clicks', 'Conversions': 'conversions'
     }
     queries = queries.rename(columns=column_mapping)
@@ -1157,7 +1157,7 @@ def prepare_queries_fast(df):
     numeric_cols = ['Counts', 'clicks', 'conversions']
     for col in numeric_cols:
         if col in queries.columns:
-            queries[col] = pd.to_numeric(queries[col], errors='coerce').fillna(0).astype('int32')  # 🚀 USE INT32
+            queries[col] = pd.to_numeric(queries[col], errors='coerce').fillna(0).astype('int32')
     
     # 🚀 OPTIMIZED CLEANUP (faster boolean indexing)
     valid_mask = (queries['search'].notna()) & (queries['search'].astype(str).str.strip() != '')
@@ -1185,7 +1185,7 @@ if not st.session_state.data_loaded:
                     st.info("📁 No file uploaded and default Excel not found.")
                     st.stop()
             
-            # 🚀 MEMORY OPTIMIZATION #1: Get main sheet and DROP OTHERS IMMEDIATELY
+            # 🚀 MEMORY OPTIMIZATION: Get main sheet
             sheet_names = list(sheets.keys())
             preferred = ['queries_clustered', 'queries_dedup', 'queries']
             main_sheet = None
@@ -1201,22 +1201,17 @@ if not st.session_state.data_loaded:
             # ✅ EXTRACT MAIN SHEET
             raw_queries = sheets[main_sheet]
             
-            # 🚀 MEMORY OPTIMIZATION #2: Keep ONLY essential sheets
-            summary_sheets = ['brand_summary', 'category_summary', 'subcategory_summary', 'generic_type']
+            # ✅ KEEP ONLY MAIN SHEET (since you don't use summary sheets)
             essential_sheets = {main_sheet: raw_queries}
             
-            for sheet_name in summary_sheets:
-                if sheet_name in sheets:
-                    essential_sheets[sheet_name] = sheets[sheet_name]
-            
-            # ✅ DELETE ORIGINAL SHEETS DICT (CRITICAL!)
+            # ✅ DELETE ORIGINAL SHEETS DICT
             del sheets
-            gc.collect()  # Force cleanup
+            gc.collect()
             
             # 🚀 PROCESS QUERIES
             queries = prepare_queries_fast(raw_queries)
             
-            # ✅ DELETE RAW QUERIES (CRITICAL!)
+            # ✅ DELETE RAW QUERIES
             del raw_queries
             gc.collect()
             
@@ -1238,11 +1233,9 @@ if not st.session_state.data_loaded:
 queries = st.session_state.queries
 sheets = st.session_state.sheets
 
-# Load summary sheets
-brand_summary = sheets.get('brand_summary', None)
-category_summary = sheets.get('category_summary', None)
-subcategory_summary = sheets.get('subcategory_summary', None)
-generic_type = sheets.get('generic_type', None)
+# ✅ Define main_key for later use (needed by update_sidebar_info if it exists)
+sheet_keys = list(sheets.keys())
+main_key = sheet_keys[0] if sheet_keys else 'queries_clustered'
 
 # 🚀 OPTIONAL: Reload button
 if st.sidebar.button("🔄 Reload Data"):
@@ -1254,11 +1247,11 @@ if st.sidebar.checkbox("📊 Show Data Info"):
     st.sidebar.success(f"""
     **Data Loaded:**
     - Queries: {len(queries):,}
-    - Sheets: {len(sheets)}
-    - Columns: {list(queries.columns)}
+    - Main Sheet: {main_key}
+    - Columns: {len(queries.columns)}
     """)
 
-# ✅ FIX #1: Store original queries for filter reset (ADDED)
+# ✅ Store original queries for filter reset
 if 'queries_original' not in st.session_state:
     st.session_state.queries_original = queries.copy()
 
@@ -1440,26 +1433,18 @@ create_sidebar_memory_monitor()
 
 st.markdown("---")
 
-# ✅ FIX #2: DELETED DUPLICATE SECTION (Lines that were here are now removed)
-# The "Choose main queries sheet" section has been removed because:
-# 1. It was duplicating data loading logic
-# 2. It was overwriting filtered queries
-# 3. Summary sheets are already loaded above
-
-# ----------------- OPTIMIZED FILTERS (KEEPING YOUR EXACT LOGIC) -----------------
+# ----------------- OPTIMIZED FILTERS -----------------
 st.sidebar.header("🔎 Filters")
 
 # Initialize session state for filters
 if 'filters_applied' not in st.session_state:
     st.session_state.filters_applied = False
 
-# Store original queries for reset
-# ✅ FIX: Don't store duplicate - use cached version instead
 if 'filter_reset_flag' not in st.session_state:
     st.session_state.filter_reset_flag = False
 
 
-# 🚀 OPTIMIZED DATE FILTER (SAME LOGIC, BETTER PERFORMANCE)
+# 🚀 OPTIMIZED DATE FILTER
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_date_range(_df):
     """Cache date range calculation"""
@@ -1479,7 +1464,7 @@ def get_date_range(_df):
 default_dates = get_date_range(queries)
 date_range = st.sidebar.date_input("📅 Select Date Range", value=default_dates)
 
-# 🚀 OPTIMIZED Multi-select filters helper (SAME INTERFACE, CACHED)
+# 🚀 OPTIMIZED Multi-select filters helper
 @st.cache_data(ttl=1800, show_spinner=False, hash_funcs={pd.DataFrame: lambda x: x.shape[0]})
 def get_cached_options(_df, col):
     """Cache filter options for better performance"""
@@ -1492,31 +1477,30 @@ def get_cached_options(_df, col):
 
 
 def get_filter_options(df, col, label, emoji):
-    """Your exact function with caching optimization"""
+    """Get filter options with caching"""
     if col not in df.columns:
         return [], []
     
-    # Use cached options instead of recalculating every time
     opts = get_cached_options(df, col)
     
     sel = st.sidebar.multiselect(
         f"{emoji} {label}", 
         options=opts, 
-        default=opts  # Keep your exact default behavior
+        default=opts
     )
     return sel, opts
 
-# Get filter selections (EXACTLY THE SAME AS YOUR CODE)
+# Get filter selections
 brand_filter, brand_opts = get_filter_options(queries, 'brand', 'Brand(s)', '🏷')
 dept_filter, dept_opts = get_filter_options(queries, 'department', 'Department(s)', '🏬')
 cat_filter, cat_opts = get_filter_options(queries, 'category', 'Category(ies)', '📦')
 subcat_filter, subcat_opts = get_filter_options(queries, 'sub_category', 'Sub Category(ies)', '🧴')
 class_filter, class_opts = get_filter_options(queries, 'Class', 'Class(es)', '🎯')
 
-# Text filter (EXACTLY THE SAME)
+# Text filter
 text_filter = st.sidebar.text_input("🔍 Filter queries by text (contains)")
 
-# Filter control buttons (EXACTLY THE SAME)
+# Filter control buttons
 st.sidebar.markdown("---")
 col1, col2 = st.sidebar.columns(2)
 
@@ -1526,37 +1510,35 @@ with col1:
 with col2:
     reset_filters = st.button("🗑️ Reset Filters", use_container_width=True)
 
-# ✅ FIX #3: Handle Reset Button (FIXED)
+# Handle Reset Button
 if reset_filters:
-    # ✅ Reload from original cached data
     queries = st.session_state.queries_original.copy()
     st.session_state.filters_applied = False
     st.rerun()
 
-
-# Handle Apply Button (YOUR EXACT LOGIC WITH MINOR OPTIMIZATION)
+# Handle Apply Button
 elif apply_filters:
-    # ✅ FIX: Start with original data for filtering
+    # Start with original data
     queries = st.session_state.queries_original.copy()
     
-    # Date filter (YOUR EXACT LOGIC)
+    # Date filter
     if isinstance(date_range, (list, tuple)) and len(date_range) == 2 and date_range[0] is not None:
         start_date, end_date = date_range
         queries = queries[(queries['Date'] >= pd.to_datetime(start_date)) & (queries['Date'] <= pd.to_datetime(end_date))]
     
-    # Brand filter (YOUR EXACT LOGIC)
+    # Brand filter
     if brand_filter and len(brand_filter) < len(brand_opts):
         queries = queries[queries['brand'].astype(str).isin(brand_filter)]
     
-    # Department filter (YOUR EXACT LOGIC)
+    # Department filter
     if dept_filter and len(dept_filter) < len(dept_opts):
         queries = queries[queries['department'].astype(str).isin(dept_filter)]
     
-    # Category filter (YOUR EXACT LOGIC)
+    # Category filter
     if cat_filter and len(cat_filter) < len(cat_opts):
         queries = queries[queries['category'].astype(str).isin(cat_filter)]
     
-    # Subcategory filter (YOUR EXACT LOGIC)
+    # Subcategory filter
     if subcat_filter and len(subcat_filter) < len(subcat_opts):
         queries = queries[queries['sub_category'].astype(str).isin(subcat_filter)]
 
@@ -1564,15 +1546,15 @@ elif apply_filters:
     if class_filter and len(class_filter) < len(class_opts):
         queries = queries[queries['Class'].astype(str).isin(class_filter)]
 
-    # Text filter (YOUR EXACT LOGIC)
+    # Text filter
     if text_filter:
         queries = queries[queries['normalized_query'].str.contains(re.escape(text_filter), case=False, na=False)]
     
     st.session_state.filters_applied = True
 
-# Show filter status (ENHANCED VERSION OF YOUR CODE)
+# Show filter status
 if st.session_state.filters_applied:
-    original_count = len(st.session_state.queries_original)  # ✅ Use original
+    original_count = len(st.session_state.queries_original)
     current_count = len(queries)
     reduction_pct = ((original_count - current_count) / original_count) * 100 if original_count > 0 else 0
     st.sidebar.success(f"✅ Filters Applied - {current_count:,} rows ({reduction_pct:.1f}% filtered)")
@@ -1581,7 +1563,7 @@ else:
 
 st.sidebar.markdown(f"**📊 Current rows:** {len(queries):,}")
 
-# 🚀 DEBUG INFO (OPTIONAL - REMOVE AFTER TESTING)
+# Debug info
 if st.sidebar.checkbox("🔍 Debug Info", value=False):
     st.sidebar.write("**Filter Status:**")
     st.sidebar.write(f"- Date range: {date_range}")
