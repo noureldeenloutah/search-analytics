@@ -1245,6 +1245,11 @@ category_summary = sheets.get('category_summary', None)
 subcategory_summary = sheets.get('subcategory_summary', None)
 generic_type = sheets.get('generic_type', None)
 
+# ✅ FIX: Define main_key (needed at line 1675)
+sheet_keys = list(sheets.keys())
+main_key = sheet_keys[0] if sheet_keys else 'queries_clustered'
+
+
 # 🚀 OPTIONAL: Reload button
 if st.sidebar.button("🔄 Reload Data"):
     st.session_state.data_loaded = False
