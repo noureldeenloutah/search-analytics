@@ -1472,28 +1472,7 @@ if 'filter_settings' not in st.session_state:
     }
 
 if 'queries_original' not in st.session_state:
-    # ✅ FIX: Ensure Date column exists BEFORE storing original
-    if 'Date' not in queries.columns:
-        date_candidates = ['start_date', 'date', 'query_date', 'end_date']
-        for col in date_candidates:
-            if col in queries.columns:
-                queries['Date'] = queries[col]
-                break
-        
-        if 'Date' not in queries.columns:
-            date_cols = [col for col in queries.columns if 'date' in col.lower()]
-            if date_cols:
-                queries['Date'] = queries[date_cols[0]]
-            else:
-                queries['Date'] = pd.Timestamp.now()
-    
-    # Ensure Date is datetime type
-    if 'Date' in queries.columns and queries['Date'].dtype != 'datetime64[ns]':
-        queries['Date'] = pd.to_datetime(queries['Date'], errors='coerce')
-        queries = queries[queries['Date'].notna()]
-    
     st.session_state.queries_original = queries.copy()
-
 
 # ✅ STEP 2: Get current filter options (from ORIGINAL data)
 @st.cache_data(ttl=1800, show_spinner=False, hash_funcs={pd.DataFrame: lambda x: x.shape[0]})
@@ -1659,37 +1638,6 @@ if st.session_state.get('filters_applied', False):
 # ✅ STEP 7: Always use session state queries
 queries = st.session_state.queries
 
-# ✅ FIX: Ensure Date column exists and is datetime
-if 'Date' not in queries.columns:
-    # Try to find date column with common names
-    date_candidates = ['start_date', 'date', 'query_date', 'end_date']
-    for col in date_candidates:
-        if col in queries.columns:
-            queries['Date'] = queries[col]
-            break
-    
-    # If still not found, search for any column with 'date' in name
-    if 'Date' not in queries.columns:
-        date_cols = [col for col in queries.columns if 'date' in col.lower()]
-        if date_cols:
-            queries['Date'] = queries[date_cols[0]]
-        else:
-            # Last resort: create dummy date
-            queries['Date'] = pd.Timestamp.now()
-
-# Ensure Date is datetime type
-if 'Date' in queries.columns:
-    if queries['Date'].dtype != 'datetime64[ns]':
-        queries['Date'] = pd.to_datetime(queries['Date'], errors='coerce')
-    
-    # Remove rows with invalid dates
-    invalid_dates = queries['Date'].isna().sum()
-    if invalid_dates > 0:
-        queries = queries[queries['Date'].notna()]
-
-# Update session state with cleaned data
-st.session_state.queries = queries
-
 # ✅ FIX: Check if filtered data is empty
 if queries.empty:
     st.sidebar.error("⚠️ **No data matches your filters!**")
@@ -1740,7 +1688,6 @@ else:
     st.sidebar.info(f"📊 No filters applied - {len(queries):,} rows")
 
 st.sidebar.markdown(f"**📊 Current rows:** {len(queries):,}")
-
 
 
 # ================================================================================================
