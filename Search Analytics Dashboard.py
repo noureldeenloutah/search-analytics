@@ -1691,6 +1691,7 @@ st.sidebar.markdown(f"**📊 Current rows:** {len(queries):,}")
 
 
 
+
 # ================================================================================================
 # 🔍 SEARCH ANALYTICS - WELCOME & HEADER (GENERIC)
 # ================================================================================================
@@ -12798,7 +12799,7 @@ with tab_class:
     
 
 # ----------------- Generic Type Tab (OPTIMIZED) -----------------
-# ----------------- Generic Type Tab (OPTIMIZED) -----------------
+# ----------------- Generic Type Tab (FIXED - Uses Main Data) -----------------
 with tab_generic:
     # ✅ CACHED HERO HEADER
     @st.cache_data(ttl=86400)
@@ -12818,52 +12819,84 @@ with tab_generic:
     st.markdown(get_generic_hero_html(), unsafe_allow_html=True)
     
     try:
-        # ✅ FIX: USE FILTERED QUERIES WITH brand='Other'
-        generic_type = queries[queries['brand'] == 'Other'].copy()
+        # ✅ FIX: USE FILTERED QUERIES WITH brand='Other' (from main dataframe)
+        if 'brand' not in queries.columns:
+            st.error("❌ 'brand' column not found in dataset")
+            st.info("Please ensure your data contains a 'brand' column with 'Other' values for generic terms.")
+            st.stop()
+        
+        # Filter for generic terms (brand='Other') - case insensitive
+        generic_type = queries[queries['brand'].astype(str).str.lower() == 'other'].copy()
         
         # ✅ VALIDATE DATA FIRST
-        if generic_type is None or generic_type.empty:
+        if generic_type.empty:
             st.warning("⚠️ No generic type data available (brand='Other').")
-            st.info("Generic data is now integrated into the main dataset with brand='Other'. Please ensure your data contains queries with brand='Other'.")
+            
+            # Show helpful info
+            available_brands = queries['brand'].dropna().unique()
+            st.info(f"""
+            **Current filter status:** {'Filters applied' if st.session_state.get('filters_applied', False) else 'No filters applied'}
+            
+            **Suggestions:**
+            1. Check if your data contains queries with brand='Other'
+            2. Try adjusting your filters to include more data
+            3. Reset filters to see all available generic terms
+            
+            **Available brands in current data ({len(available_brands)} total):**
+            {', '.join([str(b) for b in available_brands[:10]])}{'...' if len(available_brands) > 10 else ''}
+            """)
             st.stop()
+        
+        # Show filter info
+        if st.session_state.get('filters_applied', False):
+            st.info(f"🔍 **Filtered Data**: Analyzing {len(generic_type):,} generic terms from {len(queries):,} total filtered queries")
+        else:
+            st.info(f"📊 **All Data**: Analyzing {len(generic_type):,} generic terms from {len(queries):,} total queries")
         
         # ✅ CRITICAL: VECTORIZED DATA PROCESSING
         @st.cache_data(ttl=1800, show_spinner=False)
         def process_generic_data(data):
             """Fully vectorized data processing"""
-            # ✅ FIX: Handle both old and new column names
             data = data.copy()
-            if 'normalized_query' in data.columns:
-                data = data.rename(columns={'normalized_query': 'search'})
-            if 'Counts' in data.columns:
-                data = data.rename(columns={'Counts': 'count'})
-            if 'clicks' in data.columns:
-                data = data.rename(columns={'clicks': 'Clicks'})
-            if 'conversions' in data.columns:
-                data = data.rename(columns={'conversions': 'Conversions'})
             
+            # Map columns to expected names
+            column_mapping = {
+                'normalized_query': 'search',
+                'query': 'search',  # ✅ ADDED
+                'Counts': 'count',
+                'clicks': 'Clicks',
+                'conversions': 'Conversions'
+            }
+
+            for old_col, new_col in column_mapping.items():
+                if old_col in data.columns and new_col not in data.columns:
+                    data[new_col] = data[old_col]
+
+            
+            for old_col, new_col in column_mapping.items():
+                if old_col in data.columns and new_col not in data.columns:
+                    data[new_col] = data[old_col]
+            
+            # Validate required columns
             required_columns = ['search', 'count', 'Clicks', 'Conversions']
             missing_columns = [col for col in required_columns if col not in data.columns]
             
             if missing_columns:
                 return None, f"Missing required columns: {', '.join(missing_columns)}"
             
-            # Single copy
-            gt = data.copy()
-            
             # Vectorized numeric conversion
             numeric_columns = ['count', 'Clicks', 'Conversions']
             for col in numeric_columns:
-                gt[col] = pd.to_numeric(gt[col], errors='coerce').fillna(0).astype(np.int64)
+                data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0).astype(np.int64)
             
             # Efficient cleaning
-            gt = gt[gt['search'].notna() & (gt['search'].str.strip() != '')]
+            data = data[data['search'].notna() & (data['search'].astype(str).str.strip() != '')]
             
-            if gt.empty:
+            if data.empty:
                 return None, "No valid data after cleaning"
             
             # Vectorized aggregation
-            gt_agg = gt.groupby('search', as_index=False).agg({
+            gt_agg = data.groupby('search', as_index=False).agg({
                 'count': 'sum',
                 'Clicks': 'sum',
                 'Conversions': 'sum'
@@ -12884,11 +12917,6 @@ with tab_generic:
             gt_agg = gt_agg.sort_values('count', ascending=False).reset_index(drop=True)
             
             return gt_agg, None
-            
-            # Sort once
-            gt_agg = gt_agg.sort_values('count', ascending=False).reset_index(drop=True)
-            
-            return gt_agg, None
         
         # Process with spinner
         with st.spinner("🔄 Processing generic type data..."):
@@ -12896,8 +12924,15 @@ with tab_generic:
             
             if error:
                 st.error(f"❌ {error}")
+                st.info("""
+                **Troubleshooting:**
+                - Ensure your data has 'search', 'count', 'Clicks', 'Conversions' columns
+                - Check that numeric columns contain valid numbers
+                - Try resetting filters if you're seeing unexpected results
+                """)
                 st.stop()
-        
+
+
         # ✅ PRE-CALCULATE ALL METRICS ONCE (WITH TOTAL CTR & CR)
         @st.cache_data(ttl=1800, show_spinner=False)
         def calculate_summary_metrics(data):
@@ -12924,9 +12959,11 @@ with tab_generic:
                 'total_searches': int(total_count),
                 'total_clicks': int(total_clicks),
                 'total_conversions': int(total_conversions),
-                'total_ctr': float(total_ctr),  # ✅ Changed from avg_ctr
-                'total_cr': float(total_cr),    # ✅ Changed from avg_cr
-                'total_classic_cr': float(total_classic_cr),  # ✅ Added
+                'total_ctr': float(total_ctr),
+                'total_cr': float(total_cr),
+                'total_classic_cr': float(total_classic_cr),
+                'avg_ctr': float(data['ctr'].mean()),  # ✅ ADDED
+                'avg_cr': float(data['conversion_rate'].mean()),  # ✅ ADDED
                 'gini_coefficient': float(gini_coefficient),
                 'herfindahl_index': float(herfindahl_index),
                 'top_5_concentration': float(data.head(5)['count'].sum() / total_count * 100) if total_count > 0 else 0,
@@ -12935,6 +12972,7 @@ with tab_generic:
                 'top_generic_volume': int(data.iloc[0]['count']) if len(data) > 0 else 0,
                 'top_conversion_generic': data.nlargest(1, 'Conversions')['search'].iloc[0] if len(data) > 0 else 'N/A'
             }
+
         
         metrics = calculate_summary_metrics(gt_agg)
         
