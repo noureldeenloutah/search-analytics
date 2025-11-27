@@ -1638,6 +1638,89 @@ if st.session_state.get('filters_applied', False):
 # ✅ STEP 7: Always use session state queries
 queries = st.session_state.queries
 
+# ✅ FIX: Standardize column names across entire app
+def standardize_column_names(df):
+    """Standardize column names to ensure consistency"""
+    df = df.copy()
+    
+    # Date column standardization
+    if 'Date' not in df.columns:
+        date_candidates = ['start_date', 'date', 'START_DATE', 'query_date', 'Date']
+        for col in date_candidates:
+            if col in df.columns:
+                df['Date'] = df[col]
+                break
+        
+        # If still no Date, search for any column with 'date' in name
+        if 'Date' not in df.columns:
+            date_cols = [col for col in df.columns if 'date' in col.lower()]
+            if date_cols:
+                df['Date'] = df[date_cols[0]]
+    
+    # Search query column standardization
+    if 'search' not in df.columns:
+        search_candidates = ['normalized_query', 'query', 'search_query', 'Search', 'Query']
+        for col in search_candidates:
+            if col in df.columns:
+                df['search'] = df[col]
+                break
+    
+    # Count/Volume column standardization
+    if 'count' not in df.columns:
+        count_candidates = ['Counts', 'volume', 'search_volume', 'Count', 'Volume']
+        for col in count_candidates:
+            if col in df.columns:
+                df['count'] = df[col]
+                break
+    
+    # Clicks column standardization
+    if 'Clicks' not in df.columns:
+        click_candidates = ['clicks', 'click', 'Click', 'total_clicks']
+        for col in click_candidates:
+            if col in df.columns:
+                df['Clicks'] = df[col]
+                break
+    
+    # Conversions column standardization
+    if 'Conversions' not in df.columns:
+        conv_candidates = ['conversions', 'conversion', 'Conversion', 'total_conversions']
+        for col in conv_candidates:
+            if col in df.columns:
+                df['Conversions'] = df[col]
+                break
+    
+    # Brand column standardization
+    if 'brand' not in df.columns:
+        brand_candidates = ['Brand', 'brand_name', 'Brand_Name']
+        for col in brand_candidates:
+            if col in df.columns:
+                df['brand'] = df[col]
+                break
+    
+    return df
+
+# Apply column name standardization
+queries = standardize_column_names(queries)
+
+# ✅ Ensure Date is datetime type
+if 'Date' in queries.columns:
+    if queries['Date'].dtype != 'datetime64[ns]':
+        queries['Date'] = pd.to_datetime(queries['Date'], errors='coerce')
+    
+    # Remove any rows with invalid dates
+    if queries['Date'].isna().any():
+        invalid_count = queries['Date'].isna().sum()
+        queries = queries[queries['Date'].notna()]
+        if invalid_count > 0:
+            st.sidebar.warning(f"⚠️ Removed {invalid_count:,} rows with invalid dates")
+else:
+    # If no date column found, create dummy date
+    st.sidebar.warning("⚠️ No date column found. Using current date as placeholder.")
+    queries['Date'] = pd.Timestamp.now()
+
+# ✅ Update session state with cleaned data
+st.session_state.queries = queries
+
 # ✅ FIX: Check if filtered data is empty
 if queries.empty:
     st.sidebar.error("⚠️ **No data matches your filters!**")
@@ -1688,6 +1771,16 @@ else:
     st.sidebar.info(f"📊 No filters applied - {len(queries):,} rows")
 
 st.sidebar.markdown(f"**📊 Current rows:** {len(queries):,}")
+
+# ✅ DEBUG: Show standardized columns (OPTIONAL - Remove after testing)
+if st.sidebar.checkbox("🔍 Show Column Debug Info", value=False):
+    st.sidebar.write("**Standardized Columns:**")
+    key_columns = ['Date', 'search', 'count', 'Clicks', 'Conversions', 'brand']
+    for col in key_columns:
+        if col in queries.columns:
+            st.sidebar.write(f"✅ {col}: {queries[col].dtype}")
+        else:
+            st.sidebar.write(f"❌ {col}: Missing")
 
 
 
