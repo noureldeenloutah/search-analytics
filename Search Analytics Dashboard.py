@@ -5037,8 +5037,40 @@ with tab_search:
             kw_perf_df = calculate_enhanced_keyword_performance(queries)
 
             # ✅ GENERIC: Get top 4 grouped keywords by total volume
-            count_col = 'total_counts' if 'total_counts' in kw_perf_df.columns else ('count' if 'count' in kw_perf_df.columns else 'Counts')
-            top_4_keywords = kw_perf_df.nlargest(4, count_col)
+            # ✅ QUICK FIX: Handle missing count columns
+            try:
+                if kw_perf_df.empty:
+                    top_4_keywords = pd.DataFrame()
+                else:
+                    # Try to find any count-like column
+                    count_candidates = ['total_counts', 'count', 'Counts', 'volume', 'search_volume']
+                    
+                    count_col = None
+                    for col in count_candidates:
+                        if col in kw_perf_df.columns:
+                            count_col = col
+                            break
+                    
+                    if count_col is None:
+                        # Use first numeric column
+                        numeric_cols = kw_perf_df.select_dtypes(include=['int64', 'float64']).columns.tolist()
+                        if numeric_cols:
+                            count_col = numeric_cols[0]
+                        else:
+                            # No numeric columns, just take first 4 rows
+                            top_4_keywords = kw_perf_df.head(4)
+                            count_col = None
+                    
+                    if count_col:
+                        top_4_keywords = kw_perf_df.nlargest(4, count_col)
+                    else:
+                        top_4_keywords = kw_perf_df.head(4)
+                        
+            except Exception as e:
+                st.error(f"Error getting top keywords: {str(e)}")
+                st.info(f"Available columns: {list(kw_perf_df.columns)}")
+                top_4_keywords = pd.DataFrame()
+
             
             # Enhanced metrics display with better styling
             st.markdown("""
