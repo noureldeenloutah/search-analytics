@@ -1490,8 +1490,9 @@ def get_date_range(_df):
     except:
         return []
 
-default_dates = get_date_range(queries)
+default_dates = get_date_range(st.session_state.queries_original)  # ✅ CHANGED
 date_range = st.sidebar.date_input("📅 Select Date Range", value=default_dates)
+
 
 # 🚀 OPTIMIZED Multi-select filters helper (SAME INTERFACE, CACHED)
 @st.cache_data(ttl=1800, show_spinner=False, hash_funcs={pd.DataFrame: lambda x: x.shape[0]})  # 🚀 ADD THIS LINE
@@ -1520,12 +1521,13 @@ def get_filter_options(df, col, label, emoji):
     )
     return sel, opts
 
-# Get filter selections (EXACTLY THE SAME AS YOUR CODE)
-brand_filter, brand_opts = get_filter_options(queries, 'brand', 'Brand(s)', '🏷')
-dept_filter, dept_opts = get_filter_options(queries, 'department', 'Department(s)', '🏬')
-cat_filter, cat_opts = get_filter_options(queries, 'category', 'Category(ies)', '📦')
-subcat_filter, subcat_opts = get_filter_options(queries, 'sub_category', 'Sub Category(ies)', '🧴')
-class_filter, class_opts = get_filter_options(queries, 'Class', 'Class(es)', '🎯')
+# ✅ FIX: Get filter selections from ORIGINAL data
+brand_filter, brand_opts = get_filter_options(st.session_state.queries_original, 'brand', 'Brand(s)', '🏷')
+dept_filter, dept_opts = get_filter_options(st.session_state.queries_original, 'department', 'Department(s)', '🏬')
+cat_filter, cat_opts = get_filter_options(st.session_state.queries_original, 'category', 'Category(ies)', '📦')
+subcat_filter, subcat_opts = get_filter_options(st.session_state.queries_original, 'sub_category', 'Sub Category(ies)', '🧴')
+class_filter, class_opts = get_filter_options(st.session_state.queries_original, 'Class', 'Class(es)', '🎯')
+
 
 # Text filter (EXACTLY THE SAME)
 text_filter = st.sidebar.text_input("🔍 Filter queries by text (contains)")
@@ -1540,18 +1542,18 @@ with col1:
 with col2:
     reset_filters = st.button("🗑️ Reset Filters", use_container_width=True)
 
-# Handle Reset Button (EXACTLY THE SAME AS YOUR CODE)
+# Handle Reset Button
 if reset_filters:
-    # ✅ FIX: Just reload from cache (no copy needed)
+    queries = st.session_state.queries_original.copy()  # ✅ CHANGED: Reset to original
     st.session_state.filters_applied = False
     st.session_state.filter_reset_flag = True
     st.rerun()
 
-
-# Handle Apply Button (YOUR EXACT LOGIC WITH MINOR OPTIMIZATION)
+# Handle Apply Button
 elif apply_filters:
-    # ✅ FIX: Start with cached data (already loaded above)
-    # queries variable is already loaded from st.session_state.queries
+    # ✅ FIX: Start with ORIGINAL data
+    queries = st.session_state.queries_original.copy()  # ✅ ADDED THIS LINE
+
     
     # Date filter (YOUR EXACT LOGIC)
     if isinstance(date_range, (list, tuple)) and len(date_range) == 2 and date_range[0] is not None:
@@ -1583,6 +1585,8 @@ elif apply_filters:
         queries = queries[queries['normalized_query'].str.contains(re.escape(text_filter), case=False, na=False)]
     
     st.session_state.filters_applied = True
+    st.rerun()  # ✅ ADD THIS LINE
+
 
 # Show filter status (ENHANCED VERSION OF YOUR CODE)
 if st.session_state.filters_applied:
