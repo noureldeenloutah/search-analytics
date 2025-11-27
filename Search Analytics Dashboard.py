@@ -1668,21 +1668,27 @@ def update_sidebar_info(df, data_source):
 # ✅ Initial sidebar update
 update_sidebar_info(queries, main_key)
 
-# ✅ Debug info (unchanged)
+# ✅ Debug info (FIXED - uses processed queries instead of raw_queries)
 with st.sidebar.expander("🔍 Data Debug Info"):
-    st.write(f"Main sheet: {main_key}")
-    st.write(f"Processed columns: {list(queries.columns)}")
-    st.write(f"Processed shape: {queries.shape}")
+    st.write(f"**Main sheet:** {main_key}")
+    st.write(f"**Processed columns:** {len(queries.columns)} columns")
+    st.write(f"**Processed shape:** {queries.shape}")
     
     st.write("**Column Usage:**")
-    if 'count' in raw_queries.columns:
-        st.write(f"✓ Searches/Impressions: 'count' column")
+    if 'Counts' in queries.columns:
+        st.write(f"✅ Searches/Impressions: 'Counts' column (processed)")
     else:
-        st.write("✗ Searches/Impressions: No 'count' column found")
+        st.write("❌ Searches/Impressions: No 'Counts' column found")
     
-    st.write("**Calculation Method:**")
-    st.write("• Clicks = Searches × Click Through Rate")
-    st.write("• Conversions = Clicks × Conversion Rate")
+    if 'clicks' in queries.columns:
+        st.write(f"✅ Clicks: {queries['clicks'].sum():,}")
+    
+    if 'conversions' in queries.columns:
+        st.write(f"✅ Conversions: {queries['conversions'].sum():,}")
+    
+    st.write("**Available columns:**")
+    st.write(", ".join(queries.columns[:10]) + "...")
+
 
 # ----------------- Tabs -----------------
 tab_overview, tab_search, tab_time, tab_department, tab_category, tab_subcat, tab_class, tab_brand, tab_generic, tab_pivot, tab_insights = st.tabs([
