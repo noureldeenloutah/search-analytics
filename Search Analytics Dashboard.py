@@ -5037,7 +5037,8 @@ with tab_search:
             kw_perf_df = calculate_enhanced_keyword_performance(queries)
 
             # ✅ GENERIC: Get top 4 grouped keywords by total volume
-            top_4_keywords = kw_perf_df.nlargest(4, 'total_counts')
+            count_col = 'total_counts' if 'total_counts' in kw_perf_df.columns else ('count' if 'count' in kw_perf_df.columns else 'Counts')
+            top_4_keywords = kw_perf_df.nlargest(4, count_col)
             
             # Enhanced metrics display with better styling
             st.markdown("""
