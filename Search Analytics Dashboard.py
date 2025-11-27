@@ -1179,7 +1179,7 @@ if not st.session_state.data_loaded:
                     df_csv = pd.read_csv(upload, low_memory=False)
                     sheets = {'queries': df_csv}
             else:
-                default_path = "NUTRACEUTICALS AND NUTRITION combined_data_ June - August 2025_with_brands.xlsx"
+                default_path = "Search Data.xlsx"
                 if os.path.exists(default_path):
                     sheets = load_excel_fast(file_path=default_path)
                 else:
