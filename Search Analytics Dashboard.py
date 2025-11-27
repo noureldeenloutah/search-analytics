@@ -5081,7 +5081,24 @@ with tab_search:
             
             # ✅ DYNAMIC: Create columns based on number of top keywords (max 4)
             num_keywords = min(len(top_4_keywords), 4)
-            cols = st.columns(num_keywords)
+
+            # ✅ FIX: Handle case when no keywords exist
+            if num_keywords == 0:
+                st.warning("⚠️ No keyword data available to display top performers.")
+                st.info("This could be due to:")
+                st.markdown("""
+                - Empty dataset after filtering
+                - No valid keyword performance data
+                - Data processing issues
+                
+                **Try:**
+                - Reset your filters
+                - Check your data source
+                - Reload the page
+                """)
+            else:
+                cols = st.columns(num_keywords)
+
             
             # ✅ EMOJI MAPPING (you can customize this)
             emoji_map = {
